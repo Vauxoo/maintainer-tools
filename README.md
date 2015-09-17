@@ -89,12 +89,20 @@ to support custom code refactoring.
 * List of errors added:
 
     - `CW0001` Class name with snake_case style found, should use CamelCase.
+    - `CW0002` Delete vim comment.
+    - `CW0003` Coding comment, should use `# coding: utf-8`. (Replace)
+    - `CW0004` Missing coding comment. (Insert)
 
 More info of original autopep8 [here](https://pypi.python.org/pypi/autopep8/)
 
 You can rename snake_case to CamelCase with next command:
     $ oca-autopep8 -ri --select=CW0001 PATH
 
+You can delete vim comment
+    $ oca-autopep8 -ri --select=CW0002,W391 PATH
+
+You can fix coding comment with next command:
+    $ oca-autopep8 -ri --select=CW0003,CW0004 PATH
 
 ## Developers
 

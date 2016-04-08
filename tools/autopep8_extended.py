@@ -4,6 +4,7 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
 import ast
+import os
 import re
 import sys
 
@@ -12,6 +13,10 @@ import inflection
 
 
 CODING_COMMENT = '# coding: utf-8'
+MANIFEST_VERSION = "8.0.0.0.0"
+MANIFEST_VERSION_FORMAT = r"(\d+.\d+.\d+.\d+.\d+)"
+MANIFEST_VERSION_RGX = \
+    "(['\"]version['\"]\s*:\s*)([\"'])([a-zA-Z0-9.]*)(['\"])([,\n]*)"
 
 
 class Pep8Extended(object):
@@ -27,6 +32,7 @@ class Pep8Extended(object):
             'CW0003': 'Coding comment no standard, should use ' +
                       CODING_COMMENT,
             'CW0004': 'Missed coding comment',
+            'CW0005': 'Wrong manifest version format',
         }
         self.coding_comment = None
 
@@ -66,6 +72,15 @@ class Pep8Extended(object):
             else:
                 line_index += 1
         return source_strip
+
+    def get_dict_content(self):
+        try:
+            return ast.literal_eval(str(''.join(self.source)))
+        except:
+            return '{}'
+
+    def formatversion(self, string):
+        return re.match(MANIFEST_VERSION_FORMAT, string)
 
     def check_cw0001(self):
         '''Find class with `snake_case` style.
@@ -154,6 +169,24 @@ class Pep8Extended(object):
             msg_code = 'CW0004'
             msg = self.msgs[msg_code]
             line = 1
+            column = 0
+            return [{
+                'id': msg_code,
+                'line': line,
+                'column': column,
+                'info': msg,
+            }]
+
+    def check_cw0005(self):
+        'Detect worng version format'
+        msg_code = 'CW0005'
+        msg = self.msgs[msg_code]
+        filelines = self.get_dict_content()
+        if 'version' in filelines and \
+                not self.formatversion(filelines.get('version', '')):
+            line = self.source.index(
+                [s for s in self.source if re.sub(
+                    MANIFEST_VERSION_RGX, '', s) != s][0])
             column = 0
             return [{
                 'id': msg_code,
@@ -298,6 +331,28 @@ class FixPEP8(autopep8.FixPEP8):
         """
         self.source.insert(0, CODING_COMMENT + '\n')
         return [result['line']]
+
+    def fix_cw0005(self, result):
+        """Replace version to `MANIFEST_VERSION` global variable
+        :param result: Dict with next values
+            {
+            'id': code,
+            'line': line_number,
+            'column': column_number,
+            'info': msg,
+            }
+        :return: Return list of integers with value of # line modified
+        """
+        line = result['line']
+        version = os.environ.get('MANIFEST_VERSION') or MANIFEST_VERSION
+        rgx = MANIFEST_VERSION_RGX
+        version_old = re.sub(rgx, "\g<3>", self.source[line]).lstrip()
+        chars_to_remove = version_old.count('.') * 2 + 1
+        version_new = chars_to_remove == 1 and version or \
+            version[:-chars_to_remove] + version_old
+        version_sub = "\g<1>\g<2>" + version_new + "\g<4>\g<5>"
+        self.source[line] = re.sub(rgx, version_sub, self.source[line])
+        return [line]
 
 
 autopep8.FixPEP8 = FixPEP8

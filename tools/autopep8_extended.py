@@ -17,6 +17,7 @@ MANIFEST_VERSION = "8.0.0.0.0"
 MANIFEST_VERSION_FORMAT = r"(\d+.\d+.\d+.\d+.\d+)"
 MANIFEST_VERSION_RGX = \
     "(['\"]version['\"]\s*:\s*)([\"'])([a-zA-Z0-9.]*)(['\"])([,\n]*)"
+AST_DOCSTRING_TYPES = {ast.ClassDef, ast.FunctionDef, ast.Module}
 
 
 class Pep8Extended(object):
@@ -33,6 +34,8 @@ class Pep8Extended(object):
                       CODING_COMMENT,
             'CW0004': 'Missed coding comment',
             'CW0005': 'Wrong manifest version format',
+            'CW0006': 'First line empty in docstring',
+            'CW0007': 'bad-docstring-quotes',
         }
         self.coding_comment = None
 
@@ -195,6 +198,58 @@ class Pep8Extended(object):
                 'info': msg,
             }]
 
+    def get_docstring_lines(self, node):
+        """Get line start, line end and docstring
+        """
+        line_start = line_end = doc = None
+        if isinstance(node, tuple(AST_DOCSTRING_TYPES)) and \
+                node.body and isinstance(node.body[0], ast.Expr) and \
+                isinstance(node.body[0].value, ast.Str):
+            doc = node.body[0].value.s
+            line_end = node.body[0].lineno - 1
+            line_start = line_end - len(doc.decode('utf-8').split('\n')) + 1
+        return (line_start, line_end, doc)
+
+    def check_cw0006(self):
+        """Detect first line empty in docstring
+        """
+        msg_code = 'CW0006'
+        msg = self.msgs[msg_code]
+        source = self.strip_coding_comment()
+        line_deleted = len(self.source) - len(source)
+        nodes = ast.parse(''.join(source))
+        for node in ast.walk(nodes):
+            lstart, _, doc = self.get_docstring_lines(node)
+            if doc and (
+                    source[lstart].lstrip(' ').startswith("'''\n") or
+                    source[lstart].lstrip(' ').startswith('"""\n')):
+                return [{
+                    'id': msg_code,
+                    'line': lstart + line_deleted,
+                    'column': 0,
+                    'info': msg,
+                }]
+
+    def check_cw0007(self):
+        """Detect triple single quotes instead of
+        triple double quotes in docstring
+        """
+        msg_code = 'CW0007'
+        msg = self.msgs[msg_code]
+        source = self.strip_coding_comment()
+        line_deleted = len(self.source) - len(source)
+        nodes = ast.parse(''.join(source))
+        for node in ast.walk(nodes):
+            lstart, lend, doc = self.get_docstring_lines(node)
+            if doc and \
+                    source[lstart].lstrip(' ').startswith("'''"):
+                return [{
+                    'id': msg_code,
+                    'line': lstart + line_deleted,
+                    'column': lend + line_deleted,
+                    'info': msg,
+                }]
+
     def _execute_pep8_extendend(self):
         '''Wrapper method to run check method based on check name.
         This method will call to methods:
@@ -354,6 +409,39 @@ class FixPEP8(autopep8.FixPEP8):
         self.source[line] = re.sub(rgx, version_sub, self.source[line])
         return [line]
 
+    def fix_cw0006(self, result):
+        """Fix first line empty in docstring
+        :param result: Dict with next values
+            {
+            'id': code,
+            'line': line_start,
+            'info': msg,
+            }
+        :return: Return list of integers with value of # line modified
+        """
+        line = result['line']
+        self.source[line] = self.source[line].replace("\n", "") + \
+            self.source[line + 1].lstrip(' ')
+        self.source[line + 1] = ''
+        return [line]
+
+    def fix_cw0007(self, result):
+        """Replace triple single quotes to triple double quotes
+        :param result: Dict with next values
+            {
+            'id': code,
+            'line': line_start,
+            'column': line_end,
+            'info': msg,
+            }
+        :return: Return list of integers with value of # line modified
+        """
+        lines_modified = [result['line']]
+        if result['line'] != result['column']:
+            lines_modified.append(result['column'])
+        for line in lines_modified:
+            self.source[line] = self.source[line].replace("'''", '"""')
+        return lines_modified
 
 autopep8.FixPEP8 = FixPEP8
 
